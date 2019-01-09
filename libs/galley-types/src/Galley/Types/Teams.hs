@@ -28,6 +28,7 @@ module Galley.Types.Teams
     , newTeamMember
     , userId
     , permissions
+    , invitation
     , teamMemberJson
 
     , TeamMemberList
@@ -191,6 +192,7 @@ data TeamList = TeamList
 data TeamMember = TeamMember
     { _userId      :: UserId
     , _permissions :: Permissions
+    , _invitation  :: Maybe (UserId, UTCTime)
     } deriving (Eq, Ord, Show)
 
 newtype TeamMemberList = TeamMemberList
@@ -258,7 +260,7 @@ newTeam tid uid nme ico bnd = Team tid uid nme ico Nothing bnd
 newTeamList :: [Team] -> Bool -> TeamList
 newTeamList = TeamList
 
-newTeamMember :: UserId -> Permissions -> TeamMember
+newTeamMember :: UserId -> Permissions -> Maybe (UserId, UTCTime) -> TeamMember
 newTeamMember = TeamMember
 
 newTeamMemberList :: [TeamMember] -> TeamMemberList
@@ -439,9 +441,16 @@ teamMemberListJson withPerm l =
     object [ "members" .= map (teamMemberJson withPerm) (_teamMembers l) ]
 
 instance FromJSON TeamMember where
-    parseJSON = withObject "team-member" $ \o ->
-        TeamMember <$> o .:  "user"
-                   <*> o .:  "permissions"
+    parseJSON = withObject "team-member" $ \o -> do
+        user   <- o .:  "user"
+        perms  <- o .:  "permissions"
+        minvby <- o .:? "invited_by"
+        minvat <- o .:? "invited_at"
+        minv    <- case (minvby, minvat) of
+            (Just invby, Just invat) -> pure $ Just (invby, fromUTCTimeMillis invat)
+            (Nothing, Nothing)       -> pure Nothing
+            _                        -> fail "incomplete invitation metadata"
+        pure $ TeamMember user perms minv
 
 instance FromJSON TeamMemberList where
     parseJSON = withObject "team member list" $ \o ->
